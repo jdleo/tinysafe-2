@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Step 1: Download and prepare ToxicChat + Jigsaw datasets.
+Step 1: Download and prepare ToxicChat + Jigsaw + WildGuard datasets.
 - ToxicChat train split (human-annotated, our target benchmark)
 - Jigsaw Unintended Bias (1.8M comments, continuous toxicity scores)
 - Jigsaw Toxic Comment Classification (multi-label categories)
+- WildGuardTrain (adversarial/jailbreak prompts from allenai/wildguardmix)
 """
 
 import sys
@@ -162,6 +163,101 @@ def prepare_jigsaw_toxic_comments(config: dict) -> list[dict]:
     return samples
 
 
+WILDGUARD_CATEGORY_MAP = {
+    "Violence": "violence",
+    "Hate": "hate",
+    "Sexual": "sexual",
+    "Self-Harm": "self_harm",
+    "Guns/Illegal Weapons": "dangerous_info",
+    "Regulated Substances": "dangerous_info",
+    "Suicide & Self Harm": "self_harm",
+    "Criminal Planning": "illegal_activity",
+    "Privacy": "harassment",
+    "Harassment": "harassment",
+    "Threat": "violence",
+    "Profanity": "harassment",
+    "Sexual (minors)": "sexual",
+    "Non-Violent Crimes": "illegal_activity",
+    "Cybercrime & Unauthorized Intrusion": "illegal_activity",
+    "Chemical & Biological Weapons": "dangerous_info",
+    "Indiscriminate Weapons": "dangerous_info",
+    "Intellectual Property": "illegal_activity",
+    "Misinformation & Disinformation": "dangerous_info",
+    "Defamation": "harassment",
+    "Elections": None,  # not a safety category
+    "Tailored Financial Advice": None,
+    "Health Consultations": None,
+    "Legal Opinions": None,
+    "Government Decisions": None,
+}
+
+
+def prepare_wildguard_train(config: dict) -> list[dict]:
+    """Load WildGuardTrain split — adversarial/jailbreak prompts for generalization."""
+    import random
+    random.seed(42)
+
+    print("\n=== WildGuard Train ===")
+    max_samples = config.get("wildguard", {}).get("max_samples", 15000)
+
+    try:
+        ds = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train")
+        print(f"  Loaded {len(ds)} rows from allenai/wildguardmix (wildguardtrain)")
+    except Exception as e:
+        print(f"  ERROR: Cannot load WildGuard dataset: {e}")
+        return []
+
+    samples = []
+    for row in tqdm(ds, desc="  Processing WildGuard"):
+        text = row.get("prompt", "") or row.get("instruction", "") or ""
+        if not text.strip():
+            continue
+
+        harm_label = row.get("prompt_harm_label", "")
+        label = "unsafe" if harm_label == "harmful" else "safe"
+
+        # Map WildGuard harm categories to ours
+        cats = {c: False for c in CATEGORIES}
+        harm_category = row.get("harm_category", "") or ""
+        if label == "unsafe" and harm_category:
+            # WildGuard uses comma-separated categories
+            for wg_cat in harm_category.split(","):
+                wg_cat = wg_cat.strip()
+                our_cat = WILDGUARD_CATEGORY_MAP.get(wg_cat)
+                if our_cat:
+                    cats[our_cat] = True
+
+        samples.append(normalize_sample(text, label, cats, source="wildguard_train"))
+
+    safe = [s for s in samples if s["label"] == "safe"]
+    unsafe = [s for s in samples if s["label"] == "unsafe"]
+    print(f"  Before subsample: {len(safe)} safe, {len(unsafe)} unsafe")
+
+    # Keep all unsafe, cap safe to hit max_samples
+    if len(unsafe) + len(safe) > max_samples:
+        n_safe = max_samples - len(unsafe)
+        if n_safe > 0 and len(safe) > n_safe:
+            safe = random.sample(safe, n_safe)
+        elif n_safe <= 0:
+            # Too many unsafe — cap unsafe too
+            unsafe = random.sample(unsafe, max_samples)
+            safe = []
+
+    samples = safe + unsafe
+    random.shuffle(samples)
+
+    safe_count = sum(1 for s in samples if s["label"] == "safe")
+    print(f"  After subsample: {len(samples)} (safe={safe_count}, unsafe={len(samples)-safe_count})")
+
+    # Category distribution
+    for cat in CATEGORIES:
+        count = sum(1 for s in samples if s["categories"].get(cat))
+        if count > 0:
+            print(f"    {cat}: {count}")
+
+    return samples
+
+
 def main():
     config = load_config()
     RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -169,14 +265,16 @@ def main():
     tc_samples = prepare_toxicchat(config)
     jigsaw_ub_samples = prepare_jigsaw_unintended_bias(config)
     jigsaw_tc_samples = prepare_jigsaw_toxic_comments(config)
+    wildguard_samples = prepare_wildguard_train(config)
 
     # Save each source separately
     save_jsonl(tc_samples, RAW_DIR / "toxicchat_train.jsonl")
     save_jsonl(jigsaw_ub_samples, RAW_DIR / "jigsaw_ub.jsonl")
     save_jsonl(jigsaw_tc_samples, RAW_DIR / "jigsaw_tc.jsonl")
+    save_jsonl(wildguard_samples, RAW_DIR / "wildguard_train.jsonl")
 
     # Combined
-    all_samples = tc_samples + jigsaw_ub_samples + jigsaw_tc_samples
+    all_samples = tc_samples + jigsaw_ub_samples + jigsaw_tc_samples + wildguard_samples
     save_jsonl(all_samples, RAW_DIR / "all_base_data.jsonl")
 
     safe = sum(1 for s in all_samples if s["label"] == "safe")
@@ -184,7 +282,8 @@ def main():
     print(f"TOTAL: {len(all_samples)} samples")
     print(f"  Safe: {safe} ({safe/len(all_samples)*100:.1f}%)")
     print(f"  Unsafe: {len(all_samples)-safe} ({(len(all_samples)-safe)/len(all_samples)*100:.1f}%)")
-    print(f"  Sources: ToxicChat={len(tc_samples)}, Jigsaw UB={len(jigsaw_ub_samples)}, Jigsaw TC={len(jigsaw_tc_samples)}")
+    print(f"  Sources: ToxicChat={len(tc_samples)}, Jigsaw UB={len(jigsaw_ub_samples)}, "
+          f"Jigsaw TC={len(jigsaw_tc_samples)}, WildGuard={len(wildguard_samples)}")
     print(f"Saved to {RAW_DIR}")
 
 

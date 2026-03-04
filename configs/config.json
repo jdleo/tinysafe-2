@@ -85,9 +85,12 @@
     "examples_per_request": 15,
     "max_workers": 8
   },
+  "wildguard": {
+    "max_samples": 15000
+  },
   "jigsaw": {
     "toxicity_threshold": 0.7,
-    "max_samples": 20000,
+    "max_samples": 8000,
     "use_soft_labels": false
   },
   "inference": {

@@ -226,6 +226,13 @@ def main():
         print(f"Loaded {len(data)} synthetic missing-category samples")
         samples.extend(data)
 
+    # 4. WildGuard train (adversarial/jailbreak prompts)
+    wg_path = RAW_DIR / "wildguard_train.jsonl"
+    if wg_path.exists():
+        data = load_jsonl(wg_path)
+        print(f"Loaded {len(data)} WildGuard train samples")
+        samples.extend(data)
+
     if not samples:
         print("ERROR: No data found. Run 01_prepare_data.py first.")
         sys.exit(1)

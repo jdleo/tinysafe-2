@@ -37,7 +37,7 @@ def load_model(config, device):
     )
     ckpt = torch.load(CHECKPOINT_DIR / "best_model.pt", map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
-    model = model.to(device)
+    model = model.to(device).float()
     model.eval()
     return model
 
@@ -97,7 +97,7 @@ def eval_benchmark(name, model, tokenizer, config, device, samples, threshold, c
     tmp_path = Path(f"data/eval/{name.lower().replace(' ', '_')}.jsonl")
     save_jsonl(samples, tmp_path)
     eval_ds = SafetyDataset(tmp_path, tokenizer, config["max_length"])
-    loader = DataLoader(eval_ds, batch_size=512 if use_cuda else 64, shuffle=False,
+    loader = DataLoader(eval_ds, batch_size=32, shuffle=False,
                         num_workers=nw, pin_memory=use_cuda)
     probs, labels, cat_probs, cat_labels = predict_batch(model, loader, device)
     metrics = compute_metrics(probs, labels, cat_probs, cat_labels, threshold, cat_thresholds)
@@ -139,7 +139,7 @@ def main():
 
     # 1. Internal test
     test_ds = SafetyDataset("data/processed/test.jsonl", tokenizer, config["max_length"])
-    test_loader = DataLoader(test_ds, batch_size=512 if use_cuda else 64, shuffle=False,
+    test_loader = DataLoader(test_ds, batch_size=32, shuffle=False,
                              num_workers=nw, pin_memory=use_cuda)
     probs, labels, cat_probs, cat_labels = predict_batch(model, test_loader, device)
     results["internal_test"] = compute_metrics(probs, labels, cat_probs, cat_labels, threshold, cat_thresholds)
@@ -186,7 +186,7 @@ def main():
     tmp_path = Path("data/eval/or_bench.jsonl")
     save_jsonl(or_samples, tmp_path)
     eval_ds = SafetyDataset(tmp_path, tokenizer, config["max_length"])
-    loader = DataLoader(eval_ds, batch_size=512 if use_cuda else 64, shuffle=False,
+    loader = DataLoader(eval_ds, batch_size=32, shuffle=False,
                         num_workers=nw, pin_memory=use_cuda)
     probs, labels, _, _ = predict_batch(model, loader, device)
     preds = (probs > threshold).astype(int)
@@ -209,7 +209,8 @@ def main():
     print("-" * len(header))
 
     or_fpr = f"{orb.get('fpr', 0)*100:.1f}%"
-    print(f"{'TinySafe v2':<30} {'127M':<10} {tc.get('f1_binary', 0):<10.4f} {tc.get('unsafe_recall', 0):<10.4f} {tc.get('unsafe_precision', 0):<10.4f} {wg.get('f1_binary', 0):<10.4f} {or_fpr:<10}")
+    print(f"{'TinySafe v2.1':<30} {'141M':<10} {tc.get('f1_binary', 0):<10.4f} {tc.get('unsafe_recall', 0):<10.4f} {tc.get('unsafe_precision', 0):<10.4f} {wg.get('f1_binary', 0):<10.4f} {or_fpr:<10}")
+    print(f"{'TinySafe v2':<30} {'141M':<10} {'0.782':<10} {'—':<10} {'—':<10} {'0.421':<10} {'3.8%':<10}")
     print(f"{'TinySafe v1':<30} {'71M':<10} {'0.5924':<10} {'0.6243':<10} {'~0.82':<10} {'0.7502':<10} {'18.9%':<10}")
     print(f"{'Intel toxic-prompt-roberta':<30} {'125M':<10} {'—':<10} {'—':<10} {'—':<10} {'—':<10} {'—':<10}")
     print(f"{'WildGuard-7B':<30} {'7B':<10} {'~0.92':<10} {'~0.90':<10} {'~0.94':<10} {'~0.90':<10} {'~10%':<10}")

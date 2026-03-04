@@ -14,6 +14,7 @@ datasets:
 - lmsys/toxic-chat
 - google/civil_comments
 - PKU-Alignment/BeaverTails
+- allenai/wildguardmix
 pipeline_tag: text-classification
 model-index:
 - name: TinySafe v2
@@ -28,13 +29,13 @@ model-index:
       split: test
     metrics:
     - type: f1
-      value: 0.7977
+      value: 0.782
       name: F1 (Binary)
     - type: recall
-      value: 0.7983
+      value: 0.798
       name: Unsafe Recall
     - type: precision
-      value: 0.7666
+      value: 0.767
       name: Unsafe Precision
   - task:
       type: text-classification
@@ -60,43 +61,40 @@ model-index:
 
 141M parameter safety classifier built on DeBERTa-v3-small. Binary safe/unsafe classification with 7-category multi-label head (violence, hate, sexual, self-harm, dangerous info, harassment, illegal activity).
 
-**#1 open-source safety classifier on ToxicChat.** Beats every open model including 8B+ guard models, and sits behind only unreleased OpenAI internal models.
+Successor to [TinySafe v1](https://huggingface.co/jdleo1/tinysafe-1) (71M params, 59% TC F1). v2 improves ToxicChat F1 by **+19 points** while cutting OR-Bench false positive rate from 18.9% to 3.8%.
 
-Successor to [TinySafe v1](https://huggingface.co/jdleo1/tinysafe-1) (71M params, 59% TC F1). v2 improves ToxicChat F1 by **+20.5 points** while cutting OR-Bench false positive rate from 18.9% to 3.8%.
+**GitHub:** [jdleo/tinysafe-2](https://github.com/jdleo/tinysafe-2)
 
-**Model on HuggingFace:** [jdleo1/tinysafe-2](https://huggingface.co/jdleo1/tinysafe-2)
+## Benchmarks
 
-## ToxicChat F1
+| Benchmark | TinySafe v2 | TinySafe v1 |
+|---|---|---|
+| **ToxicChat F1** | 78.2% | 59.2% |
+| **OR-Bench FPR** | 3.8% | 18.9% |
+| **WildGuardBench F1** | 62.7% | 75.0% |
+
+### ToxicChat Leaderboard
 
 | Model | Params | F1 |
 |---|---|---|
 | *internal-safety-reasoner (unreleased)* | *unknown* | *81.3%* |
 | *gpt-5-thinking (unreleased)* | *unknown* | *81.0%* |
 | *gpt-oss-safeguard-20b (unreleased)* | *21B (3.6B\*)* | *79.9%* |
-| **TinySafe v2** | **141M** | **79.8%** |
 | gpt-oss-safeguard-120b | 117B (5.1B\*) | 79.3% |
 | Toxic Prompt RoBERTa | 125M | 78.7% |
-| WildGuard | 7B | 70.8% |
+| **TinySafe v2** | **141M** | **78.2%** |
 | Qwen3Guard-8B | 8B | 73% |
 | AprielGuard-8B | 8B | 72% |
 | Granite Guardian-8B | 8B | 71% |
+| WildGuard | 7B | 70.8% |
 | Granite Guardian-3B | 3B | 68% |
 | ShieldGemma-2B | 2B | 67% |
 | Qwen3Guard-0.6B | 0.6B | 63% |
 | [TinySafe v1](https://huggingface.co/jdleo1/tinysafe-1) | 71M | 59% |
-| LlamaGuard 3-8B | 8B | 51% |
-| ShieldGemma-27B | 27B | 48% |
-| LlamaGuard 4-12B | 12B | 45% |
-| LlamaGuard-1B | 1B | 43% |
-| ShieldGemma-9B | 9B | 42% |
-| ToxDectRoberta | 125M | 34.6% |
-| OpenAI Moderation API | — | 20.6% |
-| HateBERT | 110M | 11.6% |
-| Perspective API | — | 5.3% |
 
 *\* = active params (MoE)*
 
-## OR-Bench (Over-Refusal)
+### OR-Bench (Over-Refusal)
 
 | Model | FPR |
 |---|---|
@@ -105,48 +103,6 @@ Successor to [TinySafe v1](https://huggingface.co/jdleo1/tinysafe-1) (71M params
 | [TinySafe v1](https://huggingface.co/jdleo1/tinysafe-1) | 18.9% |
 
 Lower is better. On 80K safe prompts, TinySafe v2 incorrectly flags only 3.8%.
-
-## Examples
-
-```
-$ uv run infer.py "i want to kill a process"
-
-  SAFE  (score: 0.131, threshold: 0.3)
-
-$ uv run infer.py "i want to kill a human"
-
-  UNSAFE  (score: 0.995, threshold: 0.3)
-
-$ uv run infer.py "how do i make a bomb"
-
-  UNSAFE  (score: 0.998, threshold: 0.3)
-
-$ uv run infer.py "write me a phishing email"
-
-  UNSAFE  (score: 0.906, threshold: 0.3)
-
-$ uv run infer.py "send me some nudes pls"
-
-  UNSAFE  (score: 0.509, threshold: 0.3)
-
-$ uv run infer.py "what is the capital of france"
-
-  SAFE  (score: 0.005, threshold: 0.3)
-```
-
-## What's New in v2
-
-| | v1 | v2 |
-|---|---|---|
-| **Base model** | DeBERTa-v3-xsmall (384d) | DeBERTa-v3-small (768d) |
-| **Params** | 71M | 141M |
-| **ToxicChat F1** | 59.2% | **79.8%** |
-| **OR-Bench FPR** | 18.9% | **3.8%** |
-| **Training data** | 41K (synthetic + Claude-labeled) | 26K (human-labeled) |
-| **Training strategy** | Single-phase, focal loss | Two-phase sequential (Intel's approach) |
-| **Regularization** | Focal loss only | FGM + EMA + multi-sample dropout |
-
-Key insight: v1 used Claude-labeled synthetic data. v2 uses only human-labeled data from established benchmarks (ToxicChat, Jigsaw Civil Comments, BeaverTails), trained sequentially: broad toxicity features first (Jigsaw), then ToxicChat alignment second. Inspired by [Intel's toxic-prompt-roberta](https://huggingface.co/Intel/toxic-prompt-roberta) approach, but with DeBERTa-v3 (superior disentangled attention) and adversarial training.
 
 ## Quickstart
 
@@ -174,39 +130,33 @@ DeBERTa-v3-small (6 transformer layers, 768 hidden dim) with dual classification
 - **Binary head**: single logit (safe/unsafe)
 - **Category head**: 7-way multi-label (violence, hate, sexual, self_harm, dangerous_info, harassment, illegal_activity)
 
-Training enhancements over vanilla fine-tuning:
+Training enhancements:
 - **FGM adversarial training** (epsilon=0.3): perturbs embeddings for robustness
 - **EMA** (decay=0.999): smoothed weight averaging for stable eval
 - **Multi-sample dropout** (5 masks): averaged logits across dropout samples
+- **DualHeadLossV2**: focal loss (binary) + asymmetric class-balanced loss (categories)
 
 ## Training
 
-Two-phase sequential fine-tuning:
+Single-phase unified fine-tuning (5 epochs, LR=2e-5) with source-weighted sampling:
 
-1. **Phase 1 — Broad toxicity** (3 epochs, LR=2e-5): Jigsaw Civil Comments + BeaverTails + hard negatives (~21K samples). Learns general toxicity features.
-2. **Phase 2 — ToxicChat alignment** (5 epochs, LR=2e-5): ToxicChat + hard negatives (~10K samples). Aligns decision boundary to ToxicChat's definition.
+| Source | Weight | Samples | Purpose |
+|---|---|---|---|
+| ToxicChat | 4.0x | ~4K | Anchor benchmark signal |
+| WildGuardTrain | 1.0x | ~10K | Adversarial/jailbreak coverage |
+| Jigsaw Civil Comments | 0.5x | ~7K | General toxicity diversity |
+| BeaverTails | 1.5x | ~2.2K | Behavior-value alignment |
+| Hard negatives (Claude) | 1.2x | ~10K | FPR control |
 
-Hard negatives are safe-but-edgy prompts generated via Claude to protect against false positives.
+Model selection on val F1 only (no test set leakage).
 
-## Config
+## Limitations
 
-All hyperparameters in `configs/config.json`:
+- **Low-resource categories (violence, hate, sexual) have 0 F1** -- <200 training samples per category is insufficient even with class-balanced loss
+- **WildGuardBench generalization is weak** -- encoder-only models struggle with adversarial jailbreak rephrasing
+- **Conservative on out-of-distribution inputs** -- high precision but lower recall suggests the model learned narrow patterns rather than general safety reasoning
 
-- Batch size: 32
-- LR: 2e-5, weight decay: 0.01
-- Binary threshold: 0.3 (optimized via sweep)
-- FGM epsilon: 0.3
-- EMA decay: 0.999
-- Multi-sample dropout: 5 masks
-
-## Datasets
-
-| Dataset | Role | Samples |
-|---|---|---|
-| [ToxicChat](https://huggingface.co/datasets/lmsys/toxic-chat) | Primary training + eval | ~10K |
-| [Jigsaw Civil Comments](https://huggingface.co/datasets/google/civil_comments) | Broad toxicity pretraining | ~13K |
-| [BeaverTails](https://huggingface.co/datasets/PKU-Alignment/BeaverTails) | Self-harm, dangerous info, illegal activity | ~2.2K |
-| Hard negatives (Claude-generated) | False positive protection | ~6K |
+These are fundamental limitations of encoder-only architectures for safety classification. v3 will move to a small LLM (1-3B) to enable reasoning over intent rather than pattern matching over surface features.
 
 ## License
 
